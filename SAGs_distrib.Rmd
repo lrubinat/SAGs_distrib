@@ -1,0 +1,269 @@
+---
+title: "SAGs_distrib"
+author: "lrubinat"
+date: "23/01/2017"
+output: html_document
+---
+
+<!--- INITIALIZATION
+```{r, echo=FALSE}
+#error hook to kill knitr in case of errors
+library(knitr)
+knit_hooks$set(error = function(x, options) stop(x))
+opts_chunk$set(cache=TRUE, autodep=TRUE)
+```
+--->
+
+
+
+```{r libraries, echo=T, message=F}
+library(data.table)
+library(dplyr)
+library(DT)
+#library(ggplot2)
+#library(ggrepel)
+library(magrittr)
+#library(plyr)
+#library(reshape2)
+library(seqinr)
+#library(shiny)
+```
+
+
+```{r read_V9_from_SAGs, echo=F, message=F, results="hide"}
+setwd("~/SAGs_exp_fig/")
+
+primer1<-"TTGTACACACCGCCC"
+
+#read FASTA files (Genoscope, ICM and Blanes SAGs) and transform them into data.frames
+SAG_18S_GEN<-read.fasta("input/SAGs_18S_Genoscope.fasta")
+length(SAG_18S_GEN) #903
+SAG_18S_GEN<-data.table(IDs=names(SAG_18S_GEN), sequences=unlist(getSequence(SAG_18S_GEN, as.string=T)))
+SAG_18S_GEN$sequences<-toupper(SAG_18S_GEN$sequences)
+SAG_18S_GEN[,dataset:="Genoscope"]
+
+SAG_18S_ICM<-read.fasta("input/TARA_078_SAG_plate_18S_euk.fasta")
+length(SAG_18S_ICM) #40
+SAG_18S_ICM<-data.table(IDs=names(SAG_18S_ICM), sequences=unlist(getSequence(SAG_18S_ICM, as.string=T)))
+SAG_18S_ICM$sequences<-toupper(SAG_18S_ICM$sequences)
+SAG_18S_ICM[,dataset:="ICM"]
+
+
+SAG_18S_BLA<-read.fasta("input/Sags_Dec2016_cleanIDs.fasta")
+length(SAG_18S_BLA) #169
+SAG_18S_BLA<-data.table(IDs=names(SAG_18S_BLA), sequences=unlist(getSequence(SAG_18S_BLA, as.string=T)))
+SAG_18S_BLA$sequences<-toupper(SAG_18S_BLA$sequences)
+SAG_18S_BLA[,dataset:="Blanes"]
+
+SAG_18S_all<-rbind(SAG_18S_GEN,SAG_18S_ICM,SAG_18S_BLA)
+
+SAG_V9_all<-SAG_18S_all
+SAG_V9_all[,V9:=grepl(primer1,sequences)]
+SAG_V9_all<-SAG_V9_all[V9==T]
+SAG_V9_all[,sequences:=sub(paste("^.+",primer1,sep=""),"",sequences)]
+SAG_V9_all[,V9:=NULL]
+nrow(SAG_V9_all) #1062 SAGs (868 GEN; 31 ICM; 163 BLA)
+head(SAG_V9_all)
+
+#add MMETSP V9
+MMETSP_V9<-read.fasta("input/MMETSP_v9_unieuk5decembre2016_standard.fasta")
+length(MMETSP_V9) #537
+MMETSP_V9<-data.table(IDs=names(MMETSP_V9), sequences=unlist(getSequence(MMETSP_V9, as.string=T)))
+MMETSP_V9$sequences<-toupper(MMETSP_V9$sequences)
+MMETSP_V9[,dataset:="MMETSP"]
+
+SAG_V9_all<-rbind(SAG_V9_all,MMETSP_V9)
+nrow(SAG_V9_all) #1599
+
+write.fasta(sequences=as.list(SAG_V9_all$sequences), names=SAG_V9_all$IDs, file.out="./input/SAGs_V9_all.fasta")
+```
+
+A total amount of 1062 SAGs (GEN: 868 out of 903; ICM: 31 out of 40; BLA: 163 out of 169) contain the sequence of the forward primer 1389F for the V9 region (5’- TTGTACACACCGCCC -3’). None of the 1062 SAGs contains the complete sequence of the reverse primer 1510R (5’- CCTTCYGCAGGTTCACCTAC -3’) - most of the 18S rDNA SAGs miss the last ~5 bp of the V9 region.
+
+We blasted the V9 sequences of SAGs and MMETSPs on Tara swarms and we selected the hits showing a coverage >80% and a similarity =100%.
+
+```{r blast_SAGs-V9_on_swarms, echo=F, message=F, results="hide"}
+
+#data <- fread("../../../data/TARA_V9/globaldataset.otu.v20160830", select = c("md5sum","sequence"))
+#data[1:5,]
+#write.fasta(sequences=as.list(data$sequence), names=data$md5sum, file.out="./input/swarms_ref_db.fasta")
+#nrow(data)
+
+#system("vsearch --usearch_global sag_V9.fas --maxrejects 0 --maxaccepts 0 --top_hits_only -db /home0/data/Tara/last/tara_ref.fas --blast6out output.txt --id 1")
+#system("vsearch --usearch_global ./input/SAGs_V9_all.fasta --maxrejects 0 --maxaccepts 0 -db ./input/swarms_ref_db.fasta --blast6out output.txt --id 1")
+ 
+SAGs_BLAST_out<-fread("input/SAGs_swarms_BLAST_noreplicates.txt") #1158
+SAGs_BLAST_out[,subj_cov:=(V5*100/V6)] 
+
+#filter by subject coverage (remove short query sequences or alignments with short overlaping regions)
+SAGs_BLAST_out<-SAGs_BLAST_out[subj_cov>80] #981
+
+#filter by query coverage (remove short subject sequences)
+SAGs_BLAST_out<-SAGs_BLAST_out[V7>80] #975
+SAGs_BLAST_out<-SAGs_BLAST_out[,list(V1,V2,V3,V5,V6,V7,subj_cov)]
+setnames(SAGs_BLAST_out,c("SAG_id","md5sum","identity","SAG_length","swarm_length","query_cov","subj_cov"))
+#SAGs_BLAST_out<-SAGs_BLAST_out[identity==100]
+```
+
+
+```{r samples_selection, echo=F}
+#global occurrence of swarms in Tara Oceans, BioMarKs and Tara Arctic.
+data<-fread("input/globaldataset.otu.v20160830")
+head(data)
+
+#selection of Tara samples.
+sple<-fread("input/sple.csv")
+sple<-sple[fraction%in%c("0.8-5","5-20")&template=="DNA"]
+
+data_abund<-data[,.SD,.SDcols=c("md5sum",sple$sample)]
+data_abund<-melt(data_abund,id.vars="md5sum")
+data_abund<-data_abund[value>0]
+
+setkey(data_abund,variable)
+setkey(sple,sample)
+data_abund<-sple[data_abund]
+
+write.table(data_abund, "data_abund_tb_piconano_nano.txt", sep="\t",row.names=F)
+```
+
+
+########################################
+
+```{r samples_selection, echo=F}
+#global occurrence of swarms in Tara Oceans, BioMarKs and Tara Arctic.
+#data<-fread("globaldataset.otu.v20160830")
+#head(data)
+
+#selection of Tara samples.
+sple<-fread("./sple.csv")
+sple<-sple[fraction%in%c("0.8-5")&template=="DNA"]
+
+data_abund<-data[,.SD,.SDcols=c("md5sum",sple$sample)]
+data_abund<-melt(data_abund,id.vars="md5sum")
+data_abund<-data_abund[value>0]
+
+setkey(data_abund,variable)
+setkey(sple,sample)
+data_abund<-sple[data_abund]
+
+write.table(data_abund, "data_abund_tb_piconano.txt", sep="\t",row.names=F)
+```
+
+```{r samples_selection, echo=F}
+#global occurrence of swarms in Tara Oceans, BioMarKs and Tara Arctic.
+#data<-fread("globaldataset.otu.v20160830")
+#head(data)
+
+#selection of Tara samples.
+sple<-fread("./sple.csv")
+sple<-sple[fraction%in%c("5-20")&template=="DNA"]
+
+data_abund<-data[,.SD,.SDcols=c("md5sum",sple$sample)]
+data_abund<-melt(data_abund,id.vars="md5sum")
+data_abund<-data_abund[value>0]
+
+setkey(data_abund,variable)
+setkey(sple,sample)
+data_abund<-sple[data_abund]
+
+write.table(data_abund, "data_abund_tb_nano.txt", sep="\t",row.names=F)
+```
+
+########################################
+
+
+```{r abund_table, echo=F, message=F, warning=FALSE}
+
+#list of SAGs_IDs and corresponding md5sum
+SAGs_BLAST_out
+
+#md5sum abundance per station
+data_abund2<-data[,.SD,.SDcols=c("md5sum",sple$sample)]
+
+#swarm total abundance per station
+stations_abund<-data[,.SD,.SDcols=c("md5sum",sple$sample)]
+stations_abund<-colSums(stations_abund[,2:262])
+write.table(stations_abund,"stations_abund.txt",row.names=F,sep="\t")
+
+#compute the relative abundance of each SAG/MMETSP in each station
+rel_abund<-cbind(data_abund2,round(data_abund2[,-1]/stations_abund,15))
+rel_abund<-rel_abund[,-c(2:262)]
+#add column with total md5sum relative abundance {used for sorting!}
+rel_abund[,total_rel_abund:=rowSums(rel_abund[,2:262])]
+
+#add column with total md5sum abundance {used for sorting!}
+#rel_abund[,total_abund:=rowSums(data_abund2[,2:262])]
+
+abund_per_SAG<-merge(SAGs_BLAST_out, rel_abund, by.x="md5sum", by.y="md5sum", all.x=TRUE)
+abund_per_SAG<-abund_per_SAG[total_rel_abund>0]
+
+abund_per_SAG<-merge(abund_per_SAG, SAG_V9_all, by.x="SAG_id", by.y="IDs", all.x=TRUE)
+abund_per_SAG<-abund_per_SAG[order(subj_cov,decreasing = T)]
+abund_per_SAG<-abund_per_SAG[order(total_rel_abund,decreasing = T)]
+write.table(abund_per_SAG,"abund_per_SAG.txt",row.names=F,sep="\t")
+```
+
+
+```{r divide_and_collapse_datasets}
+SAGs_distrib<-abund_per_SAG[dataset%in%c("Genoscope","ICM","Blanes")] #661 270
+write.table(SAGs_distrib,"SAGs_distrib.txt",row.names=F, sep="\t")
+
+MMETSP_distrib<-abund_per_SAG[dataset%in%c("MMETSP")] #197 270
+write.table(MMETSP_distrib,"MMETSP_distrib.txt",row.names=F, sep="\t")
+```
+
+
+```{r heatmap, message=F, warning=F, echo=FALSE}
+
+#select occurrence data
+SAGs_distrib_only_occur<-SAGs_distrib[,8:268]
+SAGs_distrib_only_occur[1:15,]
+row.names(SAGs_distrib_only_occur)<-row.names(SAGs_distrib$SAG_id)
+
+#sags_otutb_SRF_only_occur<-as.data.frame(sags_otutb_SRF_only_occur)
+#row.names(sags_otutb_SRF_only_occur)<-row.names(sags_otutb_SRF)
+
+###################################
+#########collapse by md5sum########
+###################################
+
+
+# Normalization
+#norm_df = df
+#norm_df[,order] = t(t(norm_df[,order]) / renamed_col_data[order, "ntags"])
+
+
+# Visualization
+pdf("sag_abund5_1e15.pdf", 15, 40, onefile=FALSE)
+pheatmap(log10(SAGs_distrib_only_occur * 1e15 + 1), cluster_cols=F,clustering_distance_rows="correlation",
+labels_row=row.names(SAGs_distrib_only_occur))
+dev.off()
+
+pdf("sag_abund5_1e15.pdf", 15, 40, onefile=FALSE)
+pheatmap(log10(SAGs_distrib_only_occur * 1e15 + 1), cluster_cols=F,clustering_distance_rows="correlation",
+labels_row=row.names(SAGs_distrib_only_occur))
+dev.off()
+
+
+# Current state : sequenced, assembled ?
+sag_infos = read.table("sag_info.csv", sep=";", col.names=c("id", "assembly",
+"sequencing", "gc"))
+mydf = merge(named_norm_df, sag_infos, by="id")
+
+
+# Annotation
+annotation =  data.frame(sequencing=as.character(mydf$sequencing),
+assembly=as.character(mydf$assembly), gc=mydf$gc)
+rownames(mydf) = mydf$id
+rownames(annotation) = mydf$id
+
+annot_colors = list(sequencing=c("1"="green", "0"="red"), assembly=c("1"="green",
+"0"="red"))
+
+pdf("~/sag_abund.pdf", 15, 40, onefile=FALSE)
+pheatmap(log10(mydf[,order] * 1e5 + 1), cluster_cols=F,
+labels_row=named_norm_df$name, annotation_row = annotation, annotation_colors =
+annot_colors, annotation_legend=F, annotation_names_col=F)
+dev.off()
+
+
