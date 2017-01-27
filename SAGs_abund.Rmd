@@ -32,6 +32,8 @@ library(magrittr)
 library(seqinr)
 #library(shiny)
 library(pheatmap)
+library(ggplot2)
+library(stats)
 ```
 
 
@@ -229,10 +231,16 @@ MMETSP_distrib_only_occur<-MMETSP_distrib[,8:178] #includes $total_rel_abund
 MMETSP_distrib_only_occur[1:5,1:5]
 row.names(MMETSP_distrib_only_occur)<-paste(MMETSP_distrib$SAG_id,MMETSP_distrib$taxogroup, sep="-")
 
-SAGs_distrib_only_occur<-SAGs_distrib[,8:268]
+SAGs_distrib_only_occur<-SAGs_distrib[,8:178]
 SAGs_distrib_only_occur[1:15,1:5]
-row.names(SAGs_distrib_only_occur)<-SAGs_distrib$SAG_id
-row.names(SAGs_distrib_only_occur)<-paste(SAGs_distrib$SAG_id,SAGs_distrib$taxogroup, sep="-")
+#row.names(SAGs_distrib_only_occur)<-SAGs_distrib$SAG_id
+row.names(SAGs_distrib_only_occur)<-paste(SAGs_distrib$SAG_id,SAGs_distrib$taxogroup,SAGs_distrib$md5sum, sep="-")
+
+
+SAGs_distrib_only_occur.collapsed<-SAGs_distrib[,c(1,8:178)] #661 172
+SAGs_distrib_only_occur.collapsed <-SAGs_distrib_only_occur.collapsed[!duplicated(SAGs_distrib_only_occur.collapsed$md5sum),] #184 172
+SAGs_distrib_only_occur.collapsed[1:5,1:5]
+row.names(SAGs_distrib_only_occur)<-paste(SAGs_distrib$SAG_id,SAGs_distrib$taxogroup,SAGs_distrib$md5sum, sep="-")
 
 
 #sags_otutb_SRF_only_occur<-as.data.frame(sags_otutb_SRF_only_occur)
@@ -247,33 +255,36 @@ row.names(SAGs_distrib_only_occur)<-paste(SAGs_distrib$SAG_id,SAGs_distrib$taxog
 #norm_df[,order] = t(t(norm_df[,order]) / renamed_col_data[order, "ntags"])
 
 # Visualization
-pdf("sag_abund5_1e15.pdf", 15, 40, onefile=FALSE)
-pheatmap(log10(SAGs_distrib_only_occur * 1e15 + 1), cluster_cols=F,clustering_distance_rows="correlation",
+
+#pdf("sag_abund5_1e15.pdf", 15, 40, onefile=FALSE)
+#pheatmap(log10(SAGs_distrib_only_occur * 1e15 + 1), cluster_cols=F,clustering_distance_rows="correlation",
+#labels_row=row.names(SAGs_distrib_only_occur))
+#dev.off()
+
+df1[!duplicated(SAGs_distrib_only_occur$),]
+
+pdf("SAGs_distrib1_1e8.pdf", 60, 160, onefile=FALSE)
+pheatmap(log10(SAGs_distrib_only_occur * 1e8 + 1), cluster_cols=F, cellwidth = 12, cellheight = 15,
 labels_row=row.names(SAGs_distrib_only_occur))
 dev.off()
 
-pdf("sag_abund5_1e15.pdf", 15, 40, onefile=FALSE)
-pheatmap(log10(SAGs_distrib_only_occur * 1e15 + 1), cluster_cols=F,clustering_distance_rows="correlation",
-labels_row=row.names(SAGs_distrib_only_occur))
-dev.off()
 
+#pdf("sag_abund5_1e15.pdf", 15, 40, onefile=FALSE)
+#pheatmap(log10(MMETSP_distrib_only_occur * 1e15 + 1), cluster_cols=F,
+#labels_row=row.names(MMETSP_distrib_only_occur))
+#dev.off()
 
-pdf("sag_abund5_1e15.pdf", 15, 40, onefile=FALSE)
-pheatmap(log10(MMETSP_distrib_only_occur * 1e15 + 1), cluster_cols=F,
-labels_row=row.names(MMETSP_distrib_only_occur))
-dev.off()
+#pdf("sag_abund5_1e15.pdf", 42, 46, onefile=FALSE)
+#pheatmap(log10(MMETSP_distrib_only_occur * 1e15 + 1), cluster_cols=F, cellwidth = 12, cellheight = 15,
+#labels_row=row.names(MMETSP_distrib_only_occur))
+#dev.off()
 
-pdf("sag_abund5_1e15.pdf", 42, 46, onefile=FALSE)
-pheatmap(log10(MMETSP_distrib_only_occur * 1e15 + 1), cluster_cols=F, cellwidth = 12, cellheight = 15,
-labels_row=row.names(MMETSP_distrib_only_occur))
-dev.off()
+#pdf("sag_abund5_1e20.pdf", 42, 46, onefile=FALSE)
+#pheatmap(log10(MMETSP_distrib_only_occur * 1e20 + 1), cluster_cols=F, cellwidth = 12, cellheight = 15,
+#labels_row=row.names(MMETSP_distrib_only_occur))
+#dev.off()
 
-pdf("sag_abund5_1e20.pdf", 42, 46, onefile=FALSE)
-pheatmap(log10(MMETSP_distrib_only_occur * 1e20 + 1), cluster_cols=F, cellwidth = 12, cellheight = 15,
-labels_row=row.names(MMETSP_distrib_only_occur))
-dev.off()
-
-pdf("sag_abund5_1e8.pdf", 42, 46, onefile=FALSE)
+pdf("MMETSP_distrib_1e8.pdf", 42, 46, onefile=FALSE)
 pheatmap(log10(MMETSP_distrib_only_occur * 1e8 + 1), cluster_cols=F, cellwidth = 12, cellheight = 15,
 labels_row=row.names(MMETSP_distrib_only_occur))
 dev.off()
@@ -302,9 +313,24 @@ pheatmap(log10(mydf[,order] * 1e5 + 1), cluster_cols=F,
 labels_row=named_norm_df$name, annotation_row = annotation, annotation_colors =
 annot_colors, annotation_legend=F, annotation_names_col=F)
 dev.off()
+```
+
+```{r gggplot_heatmap}
+SAGs_distrib_only_occur[,IDs:=(row.names(SAGs_distrib_only_occur))]
+SAGs_distrib_only_occur.melted <- melt(SAGs_distrib_only_occur)
+
+ggplot(SAGs_distrib_only_occur.melted, aes(x=variable, y=IDs, fill=log10(value*1e8+1))) + 
+  geom_tile() +
+  scale_fill_distiller(palette = "Spectral")
 
 
+heatmap(
+   SAGs_distrib_only_occur, Rowv=NA,
+   Colv=as.dendrogram(hclust(dist(t(SAGs_distrib_only_occur))))
+   )
 
+
+```
 
 
 
